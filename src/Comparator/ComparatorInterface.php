@@ -20,6 +20,10 @@ interface ComparatorInterface
     /**
      * Validates that the value is of the expected type.
      *
+     * The parameter is intentionally typed as `mixed` so the comparator
+     * can throw a domain-specific TypeMismatchException instead of PHP
+     * throwing a native TypeError before the validation logic runs.
+     *
      * @throws \SortedLinkedList\Exception\TypeMismatchException
      */
     public function validate(mixed $value): void;
