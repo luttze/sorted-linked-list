@@ -6,8 +6,9 @@ namespace SortedLinkedList\Tests;
 
 use PHPUnit\Framework\TestCase;
 use SortedLinkedList\Exception\EmptyListException;
+use SortedLinkedList\Exception\IncompatibleListException;
 use SortedLinkedList\Exception\TypeMismatchException;
-use SortedLinkedList\Exception\ValueNotFoundException;
+
 use SortedLinkedList\SortedLinkedList;
 
 final class SortedLinkedListTest extends TestCase
@@ -15,6 +16,39 @@ final class SortedLinkedListTest extends TestCase
     // ──────────────────────────────────────────────
     //  Integer list
     // ──────────────────────────────────────────────
+
+    public function testAddToEmptyList(): void
+    {
+        $list = SortedLinkedList::ofIntegers();
+        $list->add(42);
+
+        self::assertSame([42], $list->toArray());
+        self::assertCount(1, $list);
+    }
+
+    public function testAddInsertsAtBeginning(): void
+    {
+        $list = SortedLinkedList::ofIntegers();
+        $list->add(2)->add(3)->add(1);
+
+        self::assertSame([1, 2, 3], $list->toArray());
+    }
+
+    public function testAddInsertsInMiddle(): void
+    {
+        $list = SortedLinkedList::ofIntegers();
+        $list->add(1)->add(3)->add(2);
+
+        self::assertSame([1, 2, 3], $list->toArray());
+    }
+
+    public function testAddInsertsAtEnd(): void
+    {
+        $list = SortedLinkedList::ofIntegers();
+        $list->add(1)->add(2)->add(3);
+
+        self::assertSame([1, 2, 3], $list->toArray());
+    }
 
     public function testIntegerListMaintainsSortOrder(): void
     {
@@ -76,8 +110,8 @@ final class SortedLinkedListTest extends TestCase
     {
         $list = SortedLinkedList::ofIntegers();
         $list->add(1)->add(2)->add(3);
-        $list->remove(2);
 
+        self::assertTrue($list->remove(2));
         self::assertSame([1, 3], $list->toArray());
     }
 
@@ -85,8 +119,8 @@ final class SortedLinkedListTest extends TestCase
     {
         $list = SortedLinkedList::ofIntegers();
         $list->add(1)->add(2)->add(3);
-        $list->remove(1);
 
+        self::assertTrue($list->remove(1));
         self::assertSame([2, 3], $list->toArray());
     }
 
@@ -94,8 +128,8 @@ final class SortedLinkedListTest extends TestCase
     {
         $list = SortedLinkedList::ofIntegers();
         $list->add(1)->add(2)->add(3);
-        $list->remove(3);
 
+        self::assertTrue($list->remove(3));
         self::assertSame([1, 2], $list->toArray());
     }
 
@@ -103,26 +137,25 @@ final class SortedLinkedListTest extends TestCase
     {
         $list = SortedLinkedList::ofIntegers();
         $list->add(1)->add(1)->add(2);
-        $list->remove(1);
 
+        self::assertTrue($list->remove(1));
         self::assertSame([1, 2], $list->toArray());
     }
 
-    public function testRemoveNonExistentValueThrows(): void
+    public function testRemoveNonExistentValueReturnsFalse(): void
     {
         $list = SortedLinkedList::ofIntegers();
         $list->add(1)->add(3);
 
-        $this->expectException(ValueNotFoundException::class);
-        $list->remove(2);
+        self::assertFalse($list->remove(2));
+        self::assertSame([1, 3], $list->toArray());
     }
 
-    public function testRemoveFromEmptyListThrows(): void
+    public function testRemoveFromEmptyListReturnsFalse(): void
     {
         $list = SortedLinkedList::ofIntegers();
 
-        $this->expectException(ValueNotFoundException::class);
-        $list->remove(1);
+        self::assertFalse($list->remove(1));
     }
 
     public function testRemoveAllOccurrences(): void
@@ -237,6 +270,18 @@ final class SortedLinkedListTest extends TestCase
         self::assertSame([], $list->toArray());
     }
 
+    public function testClearAllowsReuse(): void
+    {
+        $list = SortedLinkedList::ofIntegers();
+        $list->add(1)->add(2)->add(3);
+        $list->clear();
+
+        $list->add(5)->add(4);
+
+        self::assertSame([4, 5], $list->toArray());
+        self::assertCount(2, $list);
+    }
+
     // ──────────────────────────────────────────────
     //  Merge
     // ──────────────────────────────────────────────
@@ -252,6 +297,43 @@ final class SortedLinkedListTest extends TestCase
         $a->merge($b);
 
         self::assertSame([1, 2, 4, 5, 7, 8], $a->toArray());
+        self::assertSame([2, 5, 8], $b->toArray()); // other unchanged
+    }
+
+    public function testMergeIncompatibleListsThrows(): void
+    {
+        $ints = SortedLinkedList::ofIntegers();
+        $ints->add(1);
+
+        $strings = SortedLinkedList::ofStrings();
+        $strings->add('a');
+
+        $this->expectException(IncompatibleListException::class);
+        $ints->merge($strings);
+    }
+
+    public function testMergeEmptyIntoNonEmpty(): void
+    {
+        $a = SortedLinkedList::ofIntegers();
+        $a->add(1)->add(2);
+
+        $b = SortedLinkedList::ofIntegers();
+
+        $a->merge($b);
+
+        self::assertSame([1, 2], $a->toArray());
+    }
+
+    public function testMergeNonEmptyIntoEmpty(): void
+    {
+        $a = SortedLinkedList::ofIntegers();
+
+        $b = SortedLinkedList::ofIntegers();
+        $b->add(1)->add(2);
+
+        $a->merge($b);
+
+        self::assertSame([1, 2], $a->toArray());
     }
 
     // ──────────────────────────────────────────────
@@ -273,15 +355,23 @@ final class SortedLinkedListTest extends TestCase
     //  Fluent API
     // ──────────────────────────────────────────────
 
+    public function testWithComparatorRejectsInvalidValue(): void
+    {
+        $list = SortedLinkedList::withComparator(new \SortedLinkedList\Comparator\StringComparator());
+
+        $this->expectException(TypeMismatchException::class);
+        $list->add(123);
+    }
+
     public function testFluentChaining(): void
     {
-        $result = SortedLinkedList::ofIntegers()
+        $list = SortedLinkedList::ofIntegers()
             ->add(3)
             ->add(1)
-            ->add(2)
-            ->remove(1)
-            ->toArray();
+            ->add(2);
 
-        self::assertSame([2, 3], $result);
+        $list->remove(1);
+
+        self::assertSame([2, 3], $list->toArray());
     }
 }

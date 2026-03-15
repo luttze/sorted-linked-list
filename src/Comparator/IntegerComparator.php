@@ -10,11 +10,15 @@ final class IntegerComparator implements ComparatorInterface
 {
     public function compare(int|string $a, int|string $b): int
     {
-        /** @var int $a */
-        /** @var int $b */
+        $this->validate($a);
+        $this->validate($b);
+
         return $a <=> $b;
     }
 
+    /**
+     * @phpstan-assert int $value
+     */
     public function validate(mixed $value): void
     {
         if (!is_int($value)) {

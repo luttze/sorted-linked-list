@@ -10,7 +10,7 @@ use SortedLinkedList\Comparator\ComparatorInterface;
 use SortedLinkedList\Comparator\IntegerComparator;
 use SortedLinkedList\Comparator\StringComparator;
 use SortedLinkedList\Exception\EmptyListException;
-use SortedLinkedList\Exception\ValueNotFoundException;
+use SortedLinkedList\Exception\IncompatibleListException;
 use SortedLinkedList\Node\Node;
 use Traversable;
 
@@ -50,7 +50,9 @@ final class SortedLinkedList implements IteratorAggregate, Countable
     }
 
     /**
-     * Create a list with a custom comparator (OCP — open for extension).
+     * Create a list with a custom comparator (e.g. case-insensitive strings, reverse order).
+     *
+     * The comparator is still bound to int|string by the interface contract.
      */
     public static function withComparator(ComparatorInterface $comparator): self
     {
@@ -92,22 +94,21 @@ final class SortedLinkedList implements IteratorAggregate, Countable
     /**
      * Remove the first occurrence of the given value.
      *
-     * @throws ValueNotFoundException If the value is not in the list.
+     * @return bool True if the value was found and removed, false otherwise.
      */
-    public function remove(int|string $value): self
+    public function remove(int|string $value): bool
     {
         $this->comparator->validate($value);
 
         if ($this->head === null) {
-            throw ValueNotFoundException::forValue($value);
+            return false;
         }
 
-        // Head removal.
         if ($this->comparator->compare($this->head->value, $value) === 0) {
             $this->head = $this->head->next;
             $this->size--;
 
-            return $this;
+            return true;
         }
 
         $current = $this->head;
@@ -116,10 +117,9 @@ final class SortedLinkedList implements IteratorAggregate, Countable
                 $current->next = $current->next->next;
                 $this->size--;
 
-                return $this;
+                return true;
             }
 
-            // Since the list is sorted, we can bail out early.
             if ($this->comparator->compare($current->next->value, $value) > 0) {
                 break;
             }
@@ -127,7 +127,7 @@ final class SortedLinkedList implements IteratorAggregate, Countable
             $current = $current->next;
         }
 
-        throw ValueNotFoundException::forValue($value);
+        return false;
     }
 
     /**
@@ -137,8 +137,27 @@ final class SortedLinkedList implements IteratorAggregate, Countable
     {
         $this->comparator->validate($value);
 
-        while ($this->contains($value)) {
-            $this->remove($value);
+        while ($this->head !== null && $this->comparator->compare($this->head->value, $value) === 0) {
+            $this->head = $this->head->next;
+            $this->size--;
+        }
+
+        $current = $this->head;
+
+        while ($current !== null && $current->next !== null) {
+            $comparison = $this->comparator->compare($current->next->value, $value);
+
+            if ($comparison === 0) {
+                $current->next = $current->next->next;
+                $this->size--;
+                continue;
+            }
+
+            if ($comparison > 0) {
+                break;
+            }
+
+            $current = $current->next;
         }
 
         return $this;
@@ -254,15 +273,65 @@ final class SortedLinkedList implements IteratorAggregate, Countable
     // ──────────────────────────────────────────────
 
     /**
-     * Merge another sorted list of the same type into this one.
+     * Merge another sorted list into this one (mutates $this, leaves $other unchanged).
+     *
+     * Both lists must use the same comparator type.
+     * Complexity: O(n + m).
+     *
+     * @throws IncompatibleListException
      */
     public function merge(self $other): self
     {
-        foreach ($other as $value) {
-            $this->add($value);
+        if ($other->head === null) {
+            return $this;
         }
 
+        $this->assertCompatible($other);
+
+        $sentinel = new Node(0);
+        $tail = $sentinel;
+
+        $a = $this->head;
+        $b = $other->head;
+
+        while ($a !== null && $b !== null) {
+            if ($this->comparator->compare($a->value, $b->value) <= 0) {
+                $tail->next = $a;
+                $a = $a->next;
+            } else {
+                $tail->next = new Node($b->value);
+                $b = $b->next;
+            }
+
+            $tail = $tail->next;
+        }
+
+        $tail->next = $a;
+
+        while ($tail->next !== null) {
+            $tail = $tail->next;
+        }
+
+        while ($b !== null) {
+            $tail->next = new Node($b->value);
+            $tail = $tail->next;
+            $b = $b->next;
+        }
+
+        $this->head = $sentinel->next;
+        $this->size += $other->size;
+
         return $this;
+    }
+
+    private function assertCompatible(self $other): void
+    {
+        if ($this->comparator::class !== $other->comparator::class) {
+            throw IncompatibleListException::differentComparators(
+                $this->comparator::class,
+                $other->comparator::class,
+            );
+        }
     }
 
     /**
